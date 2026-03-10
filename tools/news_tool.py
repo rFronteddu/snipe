@@ -11,7 +11,7 @@ class NewsTool(Tool):
     def description(self) -> str:
         return "Summarizes today's top news from the configured news website."
 
-    def run(self, input_text: str) -> str:
+    def run(self, input_text: str | None = None) -> str:
         # input_text could allow filtering topics, but ignore for now
         articles = get_news()
         summaries = [a["title"] for a in articles]

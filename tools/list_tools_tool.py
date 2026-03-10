@@ -1,5 +1,4 @@
 from core.tool import Tool
-from typing import Dict
 
 class ListToolsTool(Tool):
     def __init__(self, tools):

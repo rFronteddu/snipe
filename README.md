@@ -64,7 +64,7 @@ CLI → Adapter → Agent
 
 
 
-"""mermaid
+```mermaid
 flowchart TB
 
 subgraph Channels
@@ -84,7 +84,7 @@ CORE --> MEMORY[Memory]
 CORE --> LLM[LLM]
 
 TOOLS --> STORAGE[Storage]
-"""
+```
 
 ## Channel Message
 ```

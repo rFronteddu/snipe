@@ -63,23 +63,28 @@ CLI → Adapter → Agent
 (The agent never knows where the message came from but we should keep track of it)
 
 
-           Channels
-    ┌────────┬─────────┬─────────┐
-    │ Email  │  SMS    │ WhatsApp│
-    └───┬────┴─────┬───┴────┬────┘
-        ▼          ▼        ▼
-      Message Interface Layer
-                │
-                ▼
-             Agent Core
-                │
-        ┌───────┼────────┐
-        ▼       ▼        ▼
-      Tools   Memory   LLM
-        │
-        ▼
-      Storage
 
+"""mermaid
+flowchart TB
+
+subgraph Channels
+    EMAIL[Email]
+    SMS[SMS]
+    WA[WhatsApp]
+end
+
+EMAIL --> MIL[Message Interface Layer]
+SMS --> MIL
+WA --> MIL
+
+MIL --> CORE[Agent Core]
+
+CORE --> TOOLS[Tools]
+CORE --> MEMORY[Memory]
+CORE --> LLM[LLM]
+
+TOOLS --> STORAGE[Storage]
+"""
 
 ## Channel Message
 ```

@@ -1,0 +1,9 @@
+version: "1.0.0"
+template: |
+  You are an AI assistant.
+  A planner has decided that you should answer the user directly without tools.
+  
+  Answer clearly and helpfully. If relevant, you may mention you have these tools available:
+  {tool_prompt}
+  
+  User: {user_input}

@@ -1,139 +1,88 @@
-# core/agent.py
 from core.memory import Memory
+import yaml
+import re
 
 class Agent:
     def __init__(self, tools, llm=None, memory_file="data/memory.json"):
+        # load all provisioned prompts
+        self.prompts = {}
+        for p in ["planner", "agent", "direct"]:
+            with open(f"prompts/v1/{p}.yaml", "r") as f:
+                self.prompts[p] = yaml.safe_load(f)["template"]
+
         self.tools = tools
         self.llm = llm
         self.memory = Memory(memory_file)
 
     def tool_prompt(self):
-        tool_descriptions = []
-        for name, tool in self.tools.items():
-            if name != "list_tools":  # optional
-                tool_descriptions.append(f"{name}: {tool.description}")
-        return "\n".join(tool_descriptions)
-
-    def build_planner_prompt(self, user_input):
-        return f"""
-    You are an AI planner.
-
-    Your job is to decide how to answer the user's request.
-
-    Available tools:
-    {self.tool_prompt()}
-
-    If tools are needed, respond:
-
-    PLAN: USE_TOOLS
-
-    If the question can be answered directly, respond:
-
-    PLAN: DIRECT_ANSWER
-
-    User: {user_input}
-    """
+        """Generates the tool block for the LLM instructions."""
+        return "\n".join([f"- {t.name}: {t.description}" for t in self.tools.values()])
 
     def plan(self, user_input):
-        planner_prompt = self.build_planner_prompt(user_input)
-
-        planner_response = self.llm.generate(planner_prompt)
+        prompt = self.prompts["planner"].format(
+            tool_prompt=self.tool_prompt(),
+            user_input=user_input
+        )
+        response = self.llm.generate(prompt)
 
         print("\n==== PLANNER ====")
-        print(planner_response)
+        print(response)
         print("=================\n")
 
-        if "USE_TOOLS" in planner_response:
-            return "tools"
-
-        return "direct"
-
-    def build_prompt(self, user_input, history):
-        return f"""You are an AI agent.
-        You can use tools.
-        Available tools:{self.tool_prompt()}
-        When you want to use a tool respond EXACTLY like:
-        TOOL: tool_name
-        INPUT: tool_input
-        Otherwise respond with the final answer.
-        Conversation:
-{history}
-User: {user_input}
-"""
+        # Simple but effective intent check
+        return "tools" if "USE_TOOLS" in response else "direct"
 
     @staticmethod
     def parse_tool_call(text):
+        # This finds both in one go, even if there are extra spaces/newlines
+        pattern = r"TOOL:\s*(.*?)\s*INPUT:\s*(.*)"
+        match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
 
-        if "TOOL:" not in text:
-            return None, None
-
-        lines = text.splitlines()
-
-        tool_name = None
-        tool_input = ""
-
-        for line in lines:
-            if line.startswith("TOOL:"):
-                tool_name = line.replace("TOOL:", "").strip()
-
-            if line.startswith("INPUT:"):
-                tool_input = line.replace("INPUT:", "").strip()
-
-        return tool_name, tool_input
+        if match:
+            # HERE you would use .group(1) and .group(2)
+            return match.group(1).strip(), match.group(2).strip()
+        return None, None
 
     def handle_message(self, message):
         user_input = message.content
 
         # STEP 1 — planner
-        plan = self.plan(user_input)
-
-        if plan == "direct":
-            prompt = f"""
-            You are an AI assistant.
-
-            A planner has already analyzed the user request and decided that
-            you should answer the question directly without using tools.
-
-            Answer the user's question clearly and helpfully. You still know about the available tools and can describe them if needed.
-            
-            Available tools:
-            {self.tool_prompt()}
-            User: {user_input}
-            """
+        intent = self.plan(user_input)
+        if intent == "direct":
+            prompt = self.prompts["direct"].format(
+                tool_prompt=self.tool_prompt(),
+                user_input=user_input
+            )
             return self.llm.generate(prompt)
 
-        # STEP 2 — tool execution loop
+        # ReAct Loop (Step 2)
         history = ""
+        for _ in range(10):  # max tool steps
+            prompt = self.prompts["agent"].format(
+                tool_description=self.tool_prompt(),
+                history=history,
+                user_input=user_input
+            )
 
-        for step in range(10):  # max tool steps
-            prompt = self.build_prompt(user_input, history)
-
-            llm_response = self.llm.generate(prompt)
+            response = self.llm.generate(prompt)
 
             # Print LLM response for this step
-            print("\n==== LLM Response ====")
-            print(llm_response)
+            print("\n==== ReAct Loop Response ====")
+            print(response)
             print("======================\n")
 
-            tool_name, tool_input = self.parse_tool_call(llm_response)
+            tool_name, tool_input = self.parse_tool_call(response)
 
-            if tool_name and tool_name in self.tools:
+            if tool_name in self.tools:
                 result = self.tools[tool_name].run(tool_input)
 
-                history += f"""
-                Tool used: {tool_name}
-                Tool input: {tool_input}
-                Tool result: {result}"""
+                # Record what the agent said AND what the tool returned
+                history += f"\nAgent: {response}\nObservation: {result}"
 
-                # print interaction
-                print("\n==== Tool Used ====")
-                print(f"Tool: {tool_name}")
-                print(f"Input: {tool_input}")
-                print(f"Output: {result}")
-                print("==================\n")
+                print(f"[*] Tool {tool_name} returned: {result}")
                 continue
 
-            # LLM produced a final answer
-            return llm_response
+            # no more tool calls detected? Treat as final answer
+            return response
 
-        return "Agent stopped after too many steps."
+        return "Error: Maximum execution steps exceeded."

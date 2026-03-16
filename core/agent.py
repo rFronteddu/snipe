@@ -4,6 +4,7 @@ import re
 
 class Agent:
     def __init__(self, tools, llm=None, memory_file="data/memory.json"):
+
         # load all provisioned prompts
         self.prompts = {}
         for p in ["planner", "agent", "direct"]:
@@ -14,75 +15,126 @@ class Agent:
         self.llm = llm
         self.memory = Memory(memory_file)
 
+    # -------------------------
+    # TOOL DESCRIPTION BLOCK
+    # -------------------------
+
     def tool_prompt(self):
-        """Generates the tool block for the LLM instructions."""
-        return "\n".join([f"- {t.name}: {t.description}" for t in self.tools.values()])
+        """Generates the tool block for prompts."""
+        return "\n".join(
+            [f"- {t.name}: {t.description}" for t in self.tools.values()])
+
+    # -------------------------
+    # PLANNER STEP
+    # -------------------------
 
     def plan(self, user_input):
+
         prompt = self.prompts["planner"].format(
             tool_prompt=self.tool_prompt(),
             user_input=user_input
         )
+
         response = self.llm.generate(prompt)
 
         print("\n==== PLANNER ====")
         print(response)
         print("=================\n")
 
-        # Simple but effective intent check
-        return "tools" if "USE_TOOLS" in response else "direct"
+        return response
+
+    # -------------------------
+    # TOOL CALL PARSER
+    # -------------------------
 
     @staticmethod
     def parse_tool_call(text):
+
         # This finds both in one go, even if there are extra spaces/newlines
         pattern = r"TOOL:\s*(.*?)\s*INPUT:\s*(.*)"
         match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
 
         if match:
-            # HERE you would use .group(1) and .group(2)
-            return match.group(1).strip(), match.group(2).strip()
+            tool = match.group(1).strip().lower()
+            tool_input = match.group(2).strip()
+            return tool, tool_input
+
         return None, None
 
+    # -------------------------
+    # MAIN MESSAGE HANDLER
+    # -------------------------
+
     def handle_message(self, message):
+
         user_input = message.content
 
-        # STEP 1 — planner
-        intent = self.plan(user_input)
-        if intent == "direct":
+        # -------------------------
+        # STEP 1: PLANNING
+        # -------------------------
+
+        plan = self.plan(user_input)
+
+        if "1. direct" in plan.lower():
+
             prompt = self.prompts["direct"].format(
                 tool_prompt=self.tool_prompt(),
                 user_input=user_input
             )
+
+            print("\n==== DIRECT ANSWER ====\n")
+
             return self.llm.generate(prompt)
 
-        # ReAct Loop (Step 2)
+        # -------------------------
+        # STEP 2: REACT LOOP
+        # -------------------------
+
         history = ""
-        for _ in range(10):  # max tool steps
+
+        for step in range(10):
+
             prompt = self.prompts["agent"].format(
                 tool_description=self.tool_prompt(),
+                plan=plan,
                 history=history,
                 user_input=user_input
             )
 
             response = self.llm.generate(prompt)
 
-            # Print LLM response for this step
             print("\n==== ReAct Loop Response ====")
             print(response)
             print("======================\n")
 
             tool_name, tool_input = self.parse_tool_call(response)
 
-            if tool_name in self.tools:
-                result = self.tools[tool_name].run(tool_input)
+            # -------------------------
+            # TOOL EXECUTION
+            # -------------------------
 
-                # Record what the agent said AND what the tool returned
-                history += f"\nAgent: {response}\nObservation: {result}"
+            if tool_name and tool_name in self.tools:
 
-                print(f"[*] Tool {tool_name} returned: {result}")
+                tool = self.tools[tool_name]
+                print(f"[TOOL CALL] {tool_name}({tool_input})")
+
+                result = tool.run(tool_input)
+
+                print(f"[TOOL RESULT] {result}\n")
+
+                history += f"""
+                Action: {tool_name}
+                Input: {tool_input}
+                Observation: {result}
+                """
                 continue
 
-            # no more tool calls detected? Treat as final answer
+                # -------------------------
+                # FINAL ANSWER
+                # -------------------------
+
+            print("\n==== FINAL ANSWER ====\n")
+
             return response
 
         return "Error: Maximum execution steps exceeded."

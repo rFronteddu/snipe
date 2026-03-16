@@ -1,0 +1,25 @@
+{
+  "servers": [
+    {
+      "name": "primary-gateway",
+      "description": "Main entry point for external traffic",
+      "ip": "192.168.1.10",
+      "user": "admin",
+      "domain_name": "gateway.local"
+    },
+    {
+      "name": "dev-node-01",
+      "description": "Sandbox for testing agentic loops",
+      "ip": "10.0.0.45",
+      "user": "ubuntu",
+      "domain_name": null
+    },
+    {
+      "name": "db-cluster-main",
+      "description": "Production database instance",
+      "ip": "10.0.0.90",
+      "user": "db_admin",
+      "domain_name": "db.internal.network"
+    }
+  ]
+}

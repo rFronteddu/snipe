@@ -4,25 +4,24 @@
 * Detective must inspect and be able to stop all conversation that look dangerous
 
 ## Roadmap
-* [ ] add a weather service tool https://www.weather.gov/documentation/services-web-api should return an error if called faster than every 5 seconds
+* [ ] we need to update the plan as the model go through it
 * [ ] add a messaging tools that sends emails
 * [ ] add an authenticator tool (security list may require to deterministically contact the user through this to use another tool)
 * [ ] add a tool to process rs feeds
-* [ ] pick a rest api for meteo and ad a meteo tool
-* [ ] tools from github repos?
-* [ ] instead of hardcoding tools, define them in separate repos
-* [ ] When a tool is imported, there should be a command the user can use to list all 
-available commands (both ls and command ls) to execute them
-* [ ] Agent tool: There should be a tool to spawn another agent to complete an async task
-* [ ] Authenticator tool: A tool to request user auth through 2FA other tools or guardrails can request
+* [ ] move tools in separate github repo
+* [ ] user should be able to import tools dynamically
 * [ ] A tool should be provided to interface with an LLM so that an user can pick the model it wants for an agent
-* [ ] Should we run tools in a container?
 * [ ] Selective add to context
 * [ ] Need a security list for what tools other tools can use
 
 ## Naming
 * Agent: LLM Powered autonomous component
 * Tool: Deterministic tool an Agent can use
+
+## Capabilities
+* [V] weather service tool https://www.weather.gov/documentation/services-web-api
+* [ ] Spawn another agent
+
 
 ## Security Notes
 Tools have a list of allow/deny, regardless what the model says, we can deterministically determine if a tool can be executed or in a chain at any point.

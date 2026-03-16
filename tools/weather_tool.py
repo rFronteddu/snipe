@@ -16,6 +16,8 @@ class WeatherTool(Tool):
         if not city:
             return "Error: No city provided."
 
+        print("Weather tool started for city: " + city)
+
         try:
             # 1. Geocoding (City -> Lat/Lon)
             geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1"

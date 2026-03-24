@@ -1,23 +1,22 @@
-version: "1.0.0"
-description: "Initial planner prompt for tool selection logic."
+version: "1.1.0"
+description: "Initial planner prompt with structured steps."
 template: |
-  You are the PLANNER of an AI planning system. 
+  You are a JSON Planner. 
   
-  Your job is to create a step-by-step plan to solve the user's request.
+  RULES:
+  1. Every plan MUST end with a step of type "respond".
+  2. If the user request cannot be fulfilled by any tool, or is unclear, create a single "respond" step explaining why and ask for a new order.
+  3. Return ONLY valid JSON.
   
-  Available tools: 
-  {tool_prompt}
-  
-  If tools are needed, reference them by name.
-  
-  Return a plan in this format:
-  
-  1. step
-  2. step
-    
-  If the question can be answered directly or about your capabilities, respond:
-  
-  1. direct
-  
-  User request: 
-  {user_input}
+  AVAILABLE TOOLS:
+  {tools}
+
+  RESPONSE FORMAT:
+  {{
+    "steps": [
+      {{ "type": "tool", "tool_name": "...", "input": "..." }},
+      {{ "type": "respond", "thought": "I will now summarize the results for the user." }}
+    ]
+  }}
+
+  User request: {user_input}

@@ -62,6 +62,64 @@ CLI → Adapter → Agent
 (The agent never knows where the message came from but we should keep track of it)
 
 
+```mermaid
+flowchart TD
+    %% Define Styles
+    classDef user fill:#8b5cf6,stroke:#fff,stroke-width:2px,color:#fff,font-weight:bold
+    classDef core fill:#3b82f6,stroke:#fff,stroke-width:2px,color:#fff,font-weight:bold
+    classDef llm fill:#f59e0b,stroke:#fff,stroke-width:2px,color:#fff,font-weight:bold
+    classDef memory fill:#10b981,stroke:#fff,stroke-width:2px,color:#fff,font-weight:bold
+    classDef tool fill:#ef4444,stroke:#fff,stroke-width:2px,color:#fff,font-weight:bold
+    classDef loop fill:#1f2937,stroke:#4b5563,stroke-width:2px,color:#e5e7eb,stroke-dasharray: 5 5
+
+    %% Entities
+    User((User)):::user
+    Agent["⚙️ Agent<br/>(handle_message)"]:::core
+    Memory[("💾 Memory<br/>(memory.json)"):- get_recent_context<br/>- add_chat_turn<br/>- summarize_if_needed]:::memory
+    LLM{"🧠 Local LLM"}:::llm
+    Tools[["🛠️ Tools<br/>(e.g., weather_tool)"]]:::tool
+
+    %% Initial Input
+    User -->|1. Raw Message Object| Agent
+
+    %% Phase 1: Context & Planning
+    Agent -->|2. Fetch History| Memory
+    Memory -.->|History Data| Agent
+    
+    Agent -->|3. Send planner.yaml<br/>(Tools + History + User Input)| LLM
+    LLM -.->|4. Raw JSON Plan| Agent
+
+    %% Phase 2: Execution Loop
+    subgraph Execution_Loop [Execution Loop]
+        direction TB
+        Parse["_safe_parse_json()"] --> LoopCheck{"For each step in plan:"}
+        
+        LoopCheck -->|"type": "tool"| ExecTool["_exec_tool()"]
+        ExecTool -->|Run| Tools
+        Tools -.->|Observation / Error| SaveObs["Append to observations[]"]
+        SaveObs --> LoopCheck
+        
+        LoopCheck -->|"type": "respond"| Finalize["_finalize()<br/>Format direct.yaml"]
+    end
+    class Execution_Loop loop
+
+    Agent -->|5. Pass JSON| Parse
+    
+    %% Phase 3: Synthesis
+    Finalize -->|6. Send Context + Observations| LLM
+    LLM -.->|7. Final String Response| Agent
+
+    %% Phase 4: Memory Management
+    Agent -->|8. Save User & Assistant turns| Memory
+    Agent -->|9. Check Summary Threshold| Memory
+    Memory -->|If > 15 turns| LLM
+    LLM -.->|Compressed Summary| Memory
+
+    %% Output
+    Agent -->|10. Return String| User
+```
+
+
 
 ```mermaid
 flowchart TB

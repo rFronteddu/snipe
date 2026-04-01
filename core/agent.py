@@ -3,7 +3,6 @@ import yaml
 import json
 import logging
 import re
-from typing import List, Dict
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("Agent")
@@ -56,6 +55,9 @@ class Agent:
         print("=" * 56 + "\n")
 
         plan = self._safe_parse_json(plan_raw)
+
+        # todo should execute again until output is in valid json
+
 
         # 3. Execution Loop
         observations = []

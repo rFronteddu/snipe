@@ -1,3 +1,4 @@
+from .time_tool import TimeTool
 from .weather_tool import WeatherTool
 from core.memory import Memory
 # Import other tools here as you add them:
@@ -15,6 +16,7 @@ def load_tools(memory_path="data/memory.json"):
     # We create a list first for easy iteration or conditional loading
     base_tools = [
         WeatherTool(),
+        TimeTool(),
         # Future tools go here:
         # GitHubReaderTool(),
     ]

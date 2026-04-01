@@ -4,7 +4,7 @@ Simple AI personal assistant written from scratch.
 ## Requirements
 
 ## Roadmap
-
+- [ ] JSON Validator with specific format
 
 ## Naming
 * Agent: LLM Powered autonomous component

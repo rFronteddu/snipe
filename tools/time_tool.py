@@ -34,7 +34,6 @@ class TimeTool(Tool):
             return "Error: 'city' parameter is required."
 
         try:
-            print("requesting coordinates...")
             geo_url = "https://geocoding-api.open-meteo.com/v1/search"
             geo_data = httpx.get(
                 geo_url,
@@ -54,22 +53,6 @@ class TimeTool(Tool):
                 timezone = "UTC"
             now = datetime.now(ZoneInfo(timezone))
             return f"Current time in {city}: {now.strftime('%Y-%m-%d %H:%M:%S')}"
-
-            # print("requesting time...")
-            # # 2. Get timezone from coordinates
-            # tz_url = "https://timeapi.io/api/TimeZone/coordinate"
-            #
-            # # tz_url = f"https://timeapi.io/api/TimeZone/coordinate?latitude={lat}&longitude={lon}"
-            # tz_data = httpx.get(tz_url, params={
-            #     "latitude": lat,
-            #     "longitude": lon
-            # }).json()
-            #
-            # timezone = tz_data["timeZone"]
-            #
-            # now = datetime.now(ZoneInfo(timezone))
-            #
-            # return f"Current time in {city}: {now.strftime('%Y-%m-%d %H:%M:%S')}"
 
         except Exception as e:
             print(e)

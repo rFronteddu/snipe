@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple Memory
 - Weather Tool
 - Time Tool
+- Schema Validation for tools and planner
 
 [//]: # (### Changed)
 

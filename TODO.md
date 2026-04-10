@@ -3,7 +3,7 @@
 ## 🎯 Current Sprint / High Priority
 - [ ] **Core Logic:** Implement robust error handling for the message processing loop.
 - [ ] **User Input Tool:** Implement tool for the LLM to request user input
-
+- [ ] **Support Tool**: extract geocode logic in core/utils/geocode.py
 [//]: # (## 🛠️ Ongoing Development)
 
 [//]: # ()

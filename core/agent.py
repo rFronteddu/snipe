@@ -1,22 +1,26 @@
+import re
+
 from core.memory import Memory
 import yaml
 import json
 import logging
-import re
+from jsonschema import validate, ValidationError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("Agent")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
+
 def _load_prompts():
     prompts = {}
-    for p in ["planner", "agent", "direct", "memory"]:
+    for p in ["planner", "direct", "memory"]:
         try:
             with open(f"prompts/v1/{p}.yaml", "r") as f:
                 prompts[p] = yaml.safe_load(f)["template"]
         except FileNotFoundError:
             logger.error(f"Prompt file {p}.yaml missing.")
     return prompts
+
 
 class Agent:
     def __init__(self, tools, llm=None, memory_file="data/memory.json"):
@@ -25,64 +29,70 @@ class Agent:
         self.llm = llm
         self.prompts = _load_prompts()
 
-    def get_tool_schemas(self):
-        """Returns tool info in a format the LLM can easily parse (JSON-like)."""
-        return [{"name": t.name, "description": t.description} for t in self.tools.values()]
+        # Export tool schemas for the planner
+        self.tool_schemas = [tool.schema() for tool in self.tools.values()]
 
-    def handle_message(self, message_obj: str):
-        """Main entry point for handling user messages with a plan-and-execute loop."""
+    def handle_message(self, message_obj: str, max_memory_recall=5, max_retries=3, max_plan_steps=10):
+        """
+        Main entry point for handling user messages using
+        a plan → execute → respond loop.
+        """
 
-        # 1. Extract the actual string content immediately
-        # If your message object has a .content attribute, use that.
-        # Otherwise, str(message_obj) is a safe fallback.
         user_text = getattr(message_obj, 'content', str(message_obj))
+        history = self.memory.get_recent_context(limit=max_memory_recall)
 
-        # 2. Fetch Context (Summary + Recent Turns)
-        history = self.memory.get_recent_context(limit=5)
+        # Planning Loop
 
-        # 3. Planning (Requesting JSON specifically)
-        plan_prompt = self.prompts["planner"].format(
-            tools=json.dumps(self.get_tool_schemas()),
-            history=history,
-            user_input=user_text
-        )
+        last_error = None
+        plan = None
 
-        plan_raw = self.llm.generate(plan_prompt)
+        plan_prompt_template = self.prompts["planner"]
 
-        # PRINT REASONING: Show what the LLM decided to do
-        print("\n" + "=" * 20 + " PLANNER OUTPUT " + "=" * 20)
-        print(plan_raw)
-        print("=" * 56 + "\n")
+        for attempt in range(1, max_retries + 1):
+            plan_prompt = plan_prompt_template.format(
+                tools=json.dumps(self.tool_schemas, indent=2),
+                history=history,
+                user_input=user_text,
+                last_error=last_error or ""
+            )
 
-        plan = self._safe_parse_json(plan_raw)
+            plan_raw = self.llm.generate(plan_prompt)
+            logger.info(f"\n=== PLANNER OUTPUT (attempt {attempt}) ===\n{plan_raw}\n")
 
-        # todo should execute again until output is in valid json
+            plan, error = self._safe_parse_json(plan_raw)
 
+            if plan and isinstance(plan.get("steps"), list):
+                break
+            last_error = f"JSON parse error: {error}"
 
-        # 3. Execution Loop
+        # Fallback if planner fails completely
+        if not plan or "steps" not in plan:
+            plan = {"steps": [
+                {"type": "respond", "thought": "The planner failed to generate a valid plan."}]}
+
+        # Execution Loop
         observations = []
-        final_response = "The planner failed to provide a concluding response step."
+        final_response = ""
 
-        for step in plan.get("steps", []):
+        for step in plan.get("steps", [])[:max_plan_steps]:
             step_type = step.get("type", "").lower()
 
             if step_type == "tool":
                 tool_name = step.get("tool_name")
-                tool_input = step.get("input", "")
+                params = step.get("input", {})
 
-                print(f"[ACTION] Using Tool: {tool_name} | Input: {tool_input}")
+                logger.info(f"[ACTION] Tool: {tool_name} | Input: {params}")
 
-                result = self._exec_tool(tool_name, tool_input)
-                observations.append({"step": tool_name, "result": result})
+                result = self._exec_tool(tool_name, params)
 
-                print(f"[OBSERVATION] {result}\n")
+                observations.append({"tool": tool_name, "input": params, "result": result})
+                logger.info(f"[OBSERVATION] {result}")
 
             elif step_type == "respond":
-                thought = step.get("thought", "Generating final response...")
+                thought = step.get("thought") or "Use tool results to answer directly."
+                logger.info(f"[THOUGHT] {thought}")
 
-                print(f"[THOUGHT] {thought}")
-
-                # Final Synthesis: Hand off observations and history to Umberto
+                # Hand off observations and history to Umberto
                 final_response = self._finalize(
                     user_input=user_text,
                     observations=observations,
@@ -91,46 +101,69 @@ class Agent:
                 )
                 break  # Exit loop once a response is generated
 
-        # 5. Memory Management
-        # Store the turn in history
+        # Memory Management
+
         self.memory.add_chat_turn("user", user_text)
         self.memory.add_chat_turn("assistant", final_response)
 
-        # Check if history is getting too long and condense it
+        # Condense memory if too long
         self.memory.summarize_if_needed(self.llm, self.prompts["memory"])
 
         return final_response
 
-    def _exec_tool(self, name, tool_input):
+    # Tool Execution
+    def _exec_tool(self, name, params):
         if name not in self.tools:
             return f"Error: Tool {name} not found."
+
+        tool = self.tools[name]
+
         try:
-            return self.tools[name].run(tool_input)
+            validate(instance=params, schema=tool.input_schema)
+        except ValidationError  as e:
+            logger.error(f"Validation error for {name}: {e}")
+            return f"Tool input validation error: {e.message}"
+        try:
+            return tool.run(params)
         except Exception as e:
             logger.error(f"Execution error for {name}: {e}")
-            return f"Error executing {name}: {str(e)}"
+            return f"Tool execution error: {str(e)}"
+
+    # JSON parsing
+    def _extract_json(self, text):
+        """
+        Extract the first JSON object from LLM output.
+        """
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        return match.group(0) if match else None
 
     def _safe_parse_json(self, text):
-        """Attempts to extract and parse JSON from LLM text."""
+        """
+        Attempts to extract and parse JSON from LLM output.
+        Returns (json_obj, error_message).
+        """
+
         try:
-            # Flexible regex to find the JSON block even with LLM conversational fluff
-            match = re.search(r'(\{.*\}|\[.*\])', text, re.DOTALL)
-            json_str = match.group(1) if match else text
-            return json.loads(json_str)
-        except (ValueError, json.JSONDecodeError, AttributeError):
+            json_str = self._extract_json(text)
+            if not json_str:
+                return None, "No JSON object found."
+            return json.loads(json_str), None
+
+        except Exception as e:
             logger.error(f"Failed to parse plan JSON. Raw text: {text}")
-            return {"steps": [{"type": "respond", "thought": "The planner failed to generate a valid JSON structure."}]}
+            return None, str(e)
 
-
+    # Final Response Generation
     def _finalize(self, user_input, observations, thought, history):
         """
-        Synthesizes the final response for the user based on tool results.
+        Synthesizes the final user-facing response.
         """
+
         final_prompt = self.prompts["direct"].format(
             user_input=user_input,
             thought=thought,
-            results=json.dumps(observations),
-            history = history
+            results=json.dumps([o["result"] for o in observations], indent=2),
+            history=history
         )
 
         return self.llm.generate(final_prompt)

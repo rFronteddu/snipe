@@ -1,8 +1,7 @@
 from .time_tool import TimeTool
 from .weather_tool import WeatherTool
 from core.memory import Memory
-# Import other tools here as you add them:
-# from tools.github_tool import GitHubTool
+
 
 def load_tools(memory_path="data/memory.json"):
     """
@@ -26,3 +25,10 @@ def load_tools(memory_path="data/memory.json"):
     tools_map = {t.name: t for t in base_tools}
 
     return tools_map
+
+def export_tool_schemas(tools_map):
+    """
+    Export tool schemas for the planner.
+    """
+
+    return [tool.schema() for tool in tools_map.values()]
